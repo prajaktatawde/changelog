@@ -1,0 +1,44 @@
+name: Generate Changelog on PR Open
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+jobs:
+  generate-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Generate Changelog
+        if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'release_')
+        run: |
+          git fetch --all
+          latest_release_branch=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' 'refs/remotes/origin/release_*' | head -n 1)
+          echo "Latest Release branch: $latest_release_branch"
+          # Get all commits from the pull request branch
+          git log $latest_release_branch..origin/main --no-merges --pretty=format:"[%ad] %s (%an)" --date=short | awk '
+          BEGIN { current_date = ""; }
+          {
+            date = substr($0, 2, 10);
+            if (date != current_date) {
+            current_date = date;
+            if (NR != 1) {
+            print "";
+          }
+            print "[" current_date "]";
+          }
+          message = substr($0, 13);
+          print "- " message;
+          }' > CHANGELOG.md
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md
+          git commit -m "Changelog Updated"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
